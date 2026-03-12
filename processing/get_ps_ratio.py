@@ -162,3 +162,5 @@ for event in ds.events:
 #        path = 'f_{:2.2f}_{:2.2f}'.format(fmin,fmax), parameters = PS_ratio_dict)
 #ds.add_auxiliary_data(data = np.array(SNRs), data_type = 'SNR',
 #        path = 'f_{:2.2f}_{:2.2f}'.format(fmin,fmax), parameters = SNR_dict)
+ds.flush()
+ds._close()

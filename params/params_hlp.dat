@@ -1,5 +1,5 @@
 filename        = hlp_raw.h5
-catalog         = /work2/03152/tg824509/stampede2/psratio_asdf/afrl_data/catalogs/HLP_catalog.txt
+catalog         = catalogs/HLP_catalog.txt
 preset          = 120.1
 offset          = 120.1
 remove_response = True

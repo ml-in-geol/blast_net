@@ -1,5 +1,5 @@
-filename        = gasc_raw.h5
-catalog         = catalogs/GASC_catalog.txt
+filename        = /Users/rossrm/Documents/Tools/blast_net/data/asdf_datasets/gasc_raw.h5
+catalog         = /Users/rossrm/Documents/Tools/blast_net/catalogs/GASC_catalog.txt
 preset          = 120.1
 offset          = 120.1
 remove_response = True

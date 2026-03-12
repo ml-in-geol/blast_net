@@ -12,7 +12,7 @@ fmin = 10.0
 fmax = 18.0
 snr_thresh = 2.0
 psr_max = 5.0
-dist_max = 350.0
+dist_max = 250.0
 
 ex_ps = []
 eq_ps = []

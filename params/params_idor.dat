@@ -1,5 +1,5 @@
 filename        = idor_raw.h5
-catalog         = /work2/03152/tg824509/stampede2/psratio_asdf/afrl_data/catalogs/IDOR_catalog.txt
+catalog         = catalogs/IDOR_catalog.txt
 preset          = 120.1
 offset          = 120.1
 remove_response = True

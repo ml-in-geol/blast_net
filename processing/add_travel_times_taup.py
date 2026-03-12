@@ -72,3 +72,6 @@ for i_ev,event in enumerate(ds.events):
 
     ds.add_auxiliary_data(data = np.array(P_times), data_type = 'travel_times', path = 'P_times/{}'.format(origin.time), parameters = P_time_dict)
     ds.add_auxiliary_data(data = np.array(S_times), data_type = 'travel_times', path = 'S_times/{}'.format(origin.time), parameters = S_time_dict)
+
+ds.flush()
+ds._close()

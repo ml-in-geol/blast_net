@@ -117,6 +117,7 @@ def main(params,debug=False):
         starttime = origin_time - float(params['preset'])
         endtime = origin_time + float(params['offset'])
         station_box = params['station_box']
+        max_dist = float(params['max_dist'])
         box_bounds = station_box.split('/')
         minlatitude = float(box_bounds[0])
         maxlatitude = float(box_bounds[1])
@@ -146,6 +147,11 @@ def main(params,debug=False):
                 dist_m, baz, az = gps2dist_azimuth(stla,stlo,evla,evlo)
                 dist_km = dist_m / 1000.
 
+                if dist_km > max_dist:
+                    print('skipping {}.{} because distance is {:.1f} km (> {:.1f} km)'.format(
+                        net.code, sta.code, dist_km, max_dist))
+                    continue
+
                 seis = obspy.Stream()
 
                 #try to get BH? data
@@ -166,6 +172,9 @@ def main(params,debug=False):
 
                 else:
                     continue
+
+    ds.flush()
+    ds._close()
 
 #params = read_param_dict('./params.dat')
 params = read_param_dict(argv[1])

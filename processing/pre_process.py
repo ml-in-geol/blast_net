@@ -136,3 +136,7 @@ for event in ds.events:
     ds_out.add_auxiliary_data(data = np.array(distances), data_type='distances', path = 'distances/{}'.format(origin.time), parameters = distance_dict)
 
 #ds.add_auxiliary_data(data = distances, data_type='distances', path='distances')
+ds.flush()
+ds._close()
+ds_out.flush()
+ds_out._close()
