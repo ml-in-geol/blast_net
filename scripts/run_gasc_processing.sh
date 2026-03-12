@@ -6,8 +6,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
 REGION="gasc"
-#PYTHON_BIN="${PYTHON_BIN:-python3}"
-PYTHON_BIN="/Users/rossrm/anaconda3/envs/pytorch_env/bin/python"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 PARAMS_TEMPLATE="${ROOT_DIR}/params/params_${REGION}.dat"
 GENERATED_PARAMS="${ROOT_DIR}/data/params_${REGION}_local.dat"
 CATALOG_FILE="${ROOT_DIR}/catalogs/GASC_catalog.txt"
