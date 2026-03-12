@@ -1,0 +1,9 @@
+filename        = wvse_v1.h5
+catalog         = catalogs/WVSE_catalog_v1.txt
+preset          = 120.1
+offset          = 120.1
+remove_response = True
+channel         = BH*,HH*
+network         = *
+station_box     = 36.3/40.3/-90.3/-86.3
+max_dist        = 250.0
