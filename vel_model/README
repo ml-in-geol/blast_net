@@ -1,0 +1,6 @@
+ENAMvel is copied from GASC. (don't have good ref yet for ENAM model)
+RIFSISvel is copied from SIMA
+ORZ0 is a very crude model. Below 10 km it is the average crust from Christensen & Mooney 1995. 
+                            Above 4 km depth, the abstract Moffat et al. 2021 (AGU meeting) says Vp < 5.5 km/s.
+
+oiink.taup is copied from gasc.taup
