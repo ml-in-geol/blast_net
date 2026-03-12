@@ -132,11 +132,20 @@ def main(params,debug=False):
         e.magnitudes = [m1]
 
         #event type
-        if event_dict[event_name]['etype'] == 0:
+        etype = event_dict[event_name]['etype']
+        if etype == 0:
             e.event_type = 'explosion'
-        elif event_dict[event_name]['etype'] == 1:
+            e.event_type_certainty = 'known'
+        elif etype == 1:
             e.event_type = 'earthquake'
-        e.event_type_certainty = 'known'
+            e.event_type_certainty = 'known'
+        elif etype == -1:
+            # QuakeML/ObsPy enum value for unknown event type.
+            e.event_type = 'not reported'
+        else:
+            e.event_type = 'not reported'
+            print('warning: unrecognized etype {} for event {}; using not reported'.format(
+                etype, event_name))
 
         ds.add_quakeml(e)
 

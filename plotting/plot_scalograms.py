@@ -74,6 +74,10 @@ for i_ev,event in enumerate(ds.events):
         e_mag = event.magnitudes[0].mag
         #if e_mag < min_mag or e_mag > max_mag:
         #    print('skipping event... magnitude {} is outside range {} - {}'.format(e_mag,min_mag,max_mag))
+    elif event.event_type == 'not reported':
+        e_type = -1
+    else:
+        e_type = -1
 
     distances = ds.auxiliary_data.distances.distances[event_name].parameters
     ps_ratios = ds.auxiliary_data.PS_ratios['{}'.format(event_name)]['f_{:2.2f}_{:2.2f}'.format(10.0,18.0)].parameters
