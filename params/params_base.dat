@@ -1,0 +1,9 @@
+filename        = base_raw.h5
+catalog         = /work2/03152/tg824509/stampede2/psratio_asdf/afrl_data/catalogs/BASE_catalog_nomines.txt
+preset          = 120.1
+offset          = 120.1
+remove_response = True
+channel         = BH*,HH*,EH*
+network         = *
+station_box     = 42.5/46/-111/-103
+max_dist        = 400.0 #not working

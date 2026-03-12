@@ -1,0 +1,9 @@
+filename        = idor_raw.h5
+catalog         = /work2/03152/tg824509/stampede2/psratio_asdf/afrl_data/catalogs/IDOR_catalog.txt
+preset          = 120.1
+offset          = 120.1
+remove_response = True
+channel         = BH*,HH*,EH*
+network         = *
+station_box     = 43/46.5/-120.2/-112
+max_dist        = 400.0 #not working
