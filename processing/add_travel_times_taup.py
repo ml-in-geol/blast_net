@@ -3,7 +3,6 @@ import pyasdf
 import subprocess
 import numpy as np
 from sys import argv
-from obspy.taup import TauPyModel
 
 km_per_degree = (2*np.pi*6371.0)/360.0
 
@@ -53,17 +52,17 @@ for i_ev,event in enumerate(ds.events):
         P_arrs = a.stdout.read()
         S_arrs = b.stdout.read()
 
-        P_times = P_arrs.split()
-        S_times = S_arrs.split()
+        P_arrival_tokens = P_arrs.split()
+        S_arrival_tokens = S_arrs.split()
 
-        if len(P_times) == 0 or len(S_times) == 0:
+        if len(P_arrival_tokens) == 0 or len(S_arrival_tokens) == 0:
             print('travel times missing for {} {}'.format(event_depth,dist_degree))
-            print('{} {}'.format(P_times,S_times))
+            print('{} {}'.format(P_arrival_tokens,S_arrival_tokens))
             continue
 
         else:
-            P_time = float(P_arrs.split()[0])
-            S_time = float(S_arrs.split()[0])
+            P_time = float(P_arrival_tokens[0])
+            S_time = float(S_arrival_tokens[0])
 
         P_time_dict['{}.{}'.format(net_code,sta_code)] = P_time
         S_time_dict['{}.{}'.format(net_code,sta_code)] = S_time
@@ -75,3 +74,4 @@ for i_ev,event in enumerate(ds.events):
 
 ds.flush()
 ds._close()
+ds._ASDFDataSet__file = None

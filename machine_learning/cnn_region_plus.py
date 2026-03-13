@@ -1,55 +1,48 @@
 import os
+from pathlib import Path
+from sys import argv
 import torch
 import torch.nn as nn
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import torchvision
-from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.io import read_image
-from torchvision.transforms import ToTensor,ToPILImage,Lambda
 import torch.optim as optim
-from torchvision import transforms
+from torchvision.transforms import Lambda
 import torch.nn.functional as F
 from network import SpectrogramDataset_plus, cnn_v2
 
-f_out_train = open('training_output.dat','w')
+if len(argv) != 2:
+    raise SystemExit('Usage: python cnn_region_plus.py <model_dir>')
 
-#set params
-region = 'gasc'
+model_dir = os.path.abspath(argv[1])
+region = Path(model_dir).resolve().name
 n_epochs = 30
 n_stop = 3
-labels_file_train = 'labels_plus_train_{}.csv'.format(region)
-labels_file_valid = 'labels_plus_valid_{}.csv'.format(region)
-labels_file_test = 'labels_plus_test_{}.csv'.format(region)
+batch_size = 24
+
+labels_file_train = os.path.join(model_dir, 'labels_train_{}.csv'.format(region))
+labels_file_valid = os.path.join(model_dir, 'labels_valid_{}.csv'.format(region))
+labels_file_test = os.path.join(model_dir, 'labels_test_{}.csv'.format(region))
+training_output_file = os.path.join(model_dir, 'training_output.dat')
+prediction_output_file = os.path.join(model_dir, 'predict_all_test.dat')
+preferred_model_path = os.path.join(model_dir, 'preferred_model_plus_{}.pt'.format(region))
+saved_models_dir = os.path.join(model_dir, 'saved_models')
 
 #initialize loss
 valid_loss_min = np.Inf
 
 #if 'saved_models' directory doesnt exist, create it
-if not os.path.exists('saved_models'):
-    os.makedirs('saved_models')
+if not os.path.exists(saved_models_dir):
+    os.makedirs(saved_models_dir)
 
 #read data
-batch_size=24
-
-#training data
 training_data = SpectrogramDataset_plus(annotations_file=labels_file_train,transform=None,target_transform=Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(0, torch.tensor(y), value=1)))
 train_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
 
-#validation data
 valid_data = SpectrogramDataset_plus(annotations_file=labels_file_valid,transform=None,target_transform=Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(0, torch.tensor(y), value=1)))
 valid_dataloader = DataLoader(valid_data, batch_size=batch_size, shuffle=True)
 
-#test data
 test_data = SpectrogramDataset_plus(annotations_file=labels_file_test,transform=None,target_transform=Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(0, torch.tensor(y), value=1)))
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=True)
-
-#train_features, train_labels = next(iter(train_dataloader))
-#specgram = train_features[0]
-#label = train_labels[0]
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -66,144 +59,105 @@ optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # train model?
 train = True
-#train = False
 
-total_loss = []
-loss_values = []
-epochs = []
+with open(training_output_file, 'w') as f_out_train:
+    if train:
 
-if train:
+        n_inc = 0
 
-    n_inc = 0
+        for epoch in range(n_epochs):  # loop over the dataset multiple times
 
-    for epoch in range(n_epochs):  # loop over the dataset multiple times
+            print('training... currently on epoch {}'.format(epoch+1))
 
-        print('training... currently on epoch {}'.format(epoch+1))
+            train_loss = 0.0
+            valid_loss = 0.0
+            train_examples = 0
+            valid_examples = 0
 
-        running_loss = 0.0
-        train_loss = 0
-        valid_loss = 0
+            model.train()
+            for data in train_dataloader:
+                inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
-        ####################
-        # train the model
-        ####################
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-        model.train()
-        for i, data in enumerate(train_dataloader, 0):
-            # get the inputs
-            #inputs,labels,dists,evlos,evlas = data
-            inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
+                batch_size_here = inputs.size(0)
+                train_loss += loss.item() * batch_size_here
+                train_examples += batch_size_here
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+            model.eval()
+            with torch.no_grad():
+                for data in valid_dataloader:
+                    inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
 
-            # forward + backward + optimize
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
 
-        ####################
-        # validate the model
-        ####################
-        model.eval()
-        for i, data in enumerate(valid_dataloader, 0):
+                    batch_size_here = inputs.size(0)
+                    valid_loss += loss.item() * batch_size_here
+                    valid_examples += batch_size_here
 
-            inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
-            #inputs,labels,dists,evlos,evlas = data
+            train_loss = train_loss / train_examples
+            valid_loss = valid_loss / valid_examples
 
-            #forward pass
-            outputs = model(inputs)
+            f_out_train.write('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}\n'.format(
+                   epoch+1, train_loss,valid_loss))
 
-            #calculate the loss
-            loss = criterion(outputs, labels)
-            valid_loss += loss.item()
+            if valid_loss <= valid_loss_min:
+                print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(
+                valid_loss_min,valid_loss))
 
-        # print training/validation statistics 
-        # calculate average loss over an epoch
-        train_loss = train_loss / len(train_dataloader.sampler)
-        valid_loss = valid_loss / len(valid_dataloader.sampler)
+                torch.save(model.state_dict(), preferred_model_path)
+                valid_loss_min = valid_loss
+                n_inc = 0
+            else:
+                n_inc += 1
 
-        #print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
-        #       epoch+1, train_loss,valid_loss))
-        f_out_train.write('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}\n'.format(
-               epoch+1, train_loss,valid_loss))
+            if n_inc >= n_stop:
+                print('the validation loss has increased of {} consecutive epochs... stopping training'.format(n_inc))
+                break
 
-        # save model if validation loss has decreased
-        if valid_loss <= valid_loss_min:
-            print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(
-            valid_loss_min,valid_loss))
-
-            torch.save(model.state_dict(), 'preferred_model_plus_{}.pt'.format(region))
-            valid_loss_min = valid_loss
-            n_inc = 0
-        else:
-            n_inc += 1
-
-        if n_inc >= n_stop:
-            print('the validation loss has increased of {} consecutive epochs... stopping training'.format(n_inc))
-            break
-
-        torch.save(model.state_dict(), 'saved_models/model_plus_epoch{}.pt'.format(epoch))
+            torch.save(model.state_dict(), os.path.join(saved_models_dir, 'model_plus_epoch{}.pt'.format(epoch)))
         
 load = True
 if load:
-
-    PATH='preferred_model_plus_{}.pt'.format(region)
     model = cnn_v2().to(device)
-    model.load_state_dict(torch.load(PATH))
-
-#----------------------------------------------------------------------
-# ground truth
-#----------------------------------------------------------------------
-#dataiter = iter(test_dataloader)
-#images, labels = dataiter.__next__()
-
-#nb = 4 #used to be 8
-#outputs = model(images)
-#_, predicted = torch.max(outputs, 1)
+    model.load_state_dict(torch.load(preferred_model_path, map_location=device))
 
 test = True
 if test:
 
-    f_out = open('predict_all_test.dat'.format(n_epochs),'w')
-
-    #check to see how network performs
     correct = 0
     total = 0
-    # since we're not training, we don't need to calculate the gradients for our outputs
-    with torch.no_grad():
-        for data in test_dataloader:
-            #images, labels = data
-            #inputs,labels,dists,evlos,evlas = data
-            inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
+    with open(prediction_output_file,'w') as f_out:
+        with torch.no_grad():
+            for data in test_dataloader:
+                inputs,labels,dists,evlos,evlas,evdps,stlos,stlas = data
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
-            # calculate outputs by running images through the network
-            outputs = model(inputs)
-            
-            # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs.data, 1)
+                outputs = model(inputs)
+                _, predicted = torch.max(outputs.data, 1)
 
-            probs = F.softmax(outputs,dim=1)
+                probs = F.softmax(outputs,dim=1)
 
-            #for i in range(0,len(outputs)):
-            for i in range(0,len(probs)):
-                label_0 = labels[i][0].item()
-                prob_0 = probs[i][0].item()
+                for i in range(0,len(probs)):
+                    label_0 = labels[i][0].item()
+                    prob_0 = probs[i][0].item()
 
-                #f_out.write('{:5.3f} {:5.3f} {:5.3f} {:5.3f} {:8.2f} {} {}\n'.format(
-                #             evlos[i],evlas[i],stlos[i],stlas[i],dists[i],labels[i],probs[i]))
-                f_out.write('{:5.3f} {:5.3f} {:5.3f} {:5.3f} {:8.2f} {:1.0f} {:2.2f}\n'.format(
-                             evlos[i],evlas[i],stlos[i],stlas[i],dists[i],label_0,prob_0))
+                    f_out.write('{:5.3f} {:5.3f} {:5.3f} {:5.3f} {:8.2f} {:1.0f} {:2.2f}\n'.format(
+                                 evlos[i],evlas[i],stlos[i],stlas[i],dists[i],label_0,prob_0))
 
-            labels_arr = labels[:,1]
-            total += labels.size(0)
-            correct += (predicted == labels_arr).sum().item()
+                labels_arr = labels[:,1]
+                total += labels.size(0)
+                correct += (predicted == labels_arr).sum().item()
 
     acc = (correct / total)*100.
     print('The accuracy of the trained network on the test images is {:2.2f}%'.format(acc))
-
-f_out_train.close()
-#plt.plot(loss_values)
-#plt.show()

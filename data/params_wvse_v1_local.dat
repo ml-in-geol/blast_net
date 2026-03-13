@@ -1,0 +1,9 @@
+filename        = /Users/rossrm/Documents/Tools/blast_net/data/asdf_datasets/wvse_v1_raw.h5
+catalog         = /Users/rossrm/Documents/Tools/blast_net/catalogs/WVSE_catalog_v1.txt
+preset          = 120.1
+offset          = 120.1
+remove_response = True
+channel         = BH*,HH*
+network         = *
+station_box     = 36.3/40.3/-90.3/-86.3
+max_dist        = 250.0

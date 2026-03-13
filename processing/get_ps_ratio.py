@@ -164,3 +164,4 @@ for event in ds.events:
 #        path = 'f_{:2.2f}_{:2.2f}'.format(fmin,fmax), parameters = SNR_dict)
 ds.flush()
 ds._close()
+ds._ASDFDataSet__file = None

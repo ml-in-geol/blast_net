@@ -6,14 +6,14 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
 REGION="wvse_v1"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+#PYTHON_BIN="${PYTHON_BIN:-python3}"
+PYTHON_BIN="/Users/rossrm/anaconda3/envs/pytorch_env/bin/python"
 PARAMS_TEMPLATE="${ROOT_DIR}/params/params_wvse_v1.dat"
 CATALOG_FILE="${ROOT_DIR}/catalogs/WVSE_catalog_v1.txt"
 GENERATED_PARAMS="${ROOT_DIR}/data/params_${REGION}_local.dat"
 ASDF_DIR="${ROOT_DIR}/data/asdf_datasets"
 RAW_FILE="${ASDF_DIR}/${REGION}_raw.h5"
 PROCESSED_FILE="${ASDF_DIR}/${REGION}_processed.h5"
-TAUP_MODEL="${TAUP_MODEL:-${ROOT_DIR}/data/vel_model/enam.taup}"
 
 require_file() {
     local path="$1"
@@ -36,7 +36,6 @@ echo "Preparing ${REGION} processing run"
 
 require_file "${PARAMS_TEMPLATE}"
 require_file "${CATALOG_FILE}"
-require_file "${TAUP_MODEL}"
 
 mkdir -p "${ROOT_DIR}/data"
 mkdir -p "${ASDF_DIR}"
@@ -55,7 +54,6 @@ sed \
     "${PARAMS_TEMPLATE}" > "${GENERATED_PARAMS}"
 
 echo "Using params file: ${GENERATED_PARAMS}"
-echo "TauP model: ${TAUP_MODEL}"
 
 echo "Step 1/4: download raw waveforms"
 "${PYTHON_BIN}" "${ROOT_DIR}/processing/get_data.py" "${GENERATED_PARAMS}"
@@ -64,7 +62,7 @@ echo "Step 2/4: preprocess waveforms"
 "${PYTHON_BIN}" "${ROOT_DIR}/processing/pre_process.py" "${RAW_FILE}" "${PROCESSED_FILE}"
 
 echo "Step 3/4: add travel times"
-"${PYTHON_BIN}" "${ROOT_DIR}/processing/add_travel_times_taup.py" "${PROCESSED_FILE}" "${TAUP_MODEL}"
+"${PYTHON_BIN}" "${ROOT_DIR}/processing/add_travel_times.py" "${PROCESSED_FILE}"
 
 echo "Step 4/4: compute P/S ratios and SNR"
 "${PYTHON_BIN}" "${ROOT_DIR}/processing/get_ps_ratio.py" "${PROCESSED_FILE}"

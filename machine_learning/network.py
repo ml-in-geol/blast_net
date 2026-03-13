@@ -3,22 +3,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import torchvision
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.io import read_image
-from torchvision.transforms import ToTensor,ToPILImage,Lambda
-import torch.optim as optim
-from torchvision import transforms
 import torch.nn.functional as F
-from sys import argv
 
 class SpectrogramDataset(Dataset):
 
     def __init__(self, annotations_file, transform=None, target_transform=None):
-        self.specgram_labels = pd.read_csv(annotations_file)
+        self.annotations_file = os.path.abspath(annotations_file)
+        self.annotations_dir = os.path.dirname(self.annotations_file)
+        self.specgram_labels = pd.read_csv(
+            self.annotations_file,
+            header=None,
+            skipinitialspace=True,
+        )
         self.transform = transform
         self.target_transform = target_transform
 
@@ -26,9 +23,7 @@ class SpectrogramDataset(Dataset):
         return len(self.specgram_labels)
 
     def __getitem__(self, idx):
-
-        #specgram_path = os.path.join(self.specgram_dir, self.specgram_labels.iloc[idx, 0])
-        specgram_path = self.specgram_labels.iloc[idx,0]
+        specgram_path = self._resolve_specgram_path(self.specgram_labels.iloc[idx, 0])
         specgram = np.load(specgram_path)
         specgram = torch.from_numpy(specgram).float()
 
@@ -39,10 +34,25 @@ class SpectrogramDataset(Dataset):
 
         return specgram, label
 
+    def _resolve_specgram_path(self, specgram_path):
+        specgram_path = str(specgram_path).strip()
+        if os.path.isabs(specgram_path):
+            return specgram_path
+        candidate = os.path.abspath(os.path.join(self.annotations_dir, specgram_path))
+        if os.path.exists(candidate):
+            return candidate
+        return os.path.abspath(specgram_path)
+
 class SpectrogramDataset_plus(Dataset):
 
     def __init__(self, annotations_file, transform=None, target_transform=None):
-        self.specgram_labels = pd.read_csv(annotations_file)
+        self.annotations_file = os.path.abspath(annotations_file)
+        self.annotations_dir = os.path.dirname(self.annotations_file)
+        self.specgram_labels = pd.read_csv(
+            self.annotations_file,
+            header=None,
+            skipinitialspace=True,
+        )
         self.transform = transform
         self.target_transform = target_transform
 
@@ -50,13 +60,11 @@ class SpectrogramDataset_plus(Dataset):
         return len(self.specgram_labels)
 
     def __getitem__(self, idx):
-        specgram_path = self.specgram_labels.iloc[idx,0]
-        #print('specgram path: {}'.format(specgram_path))
+        specgram_path = self._resolve_specgram_path(self.specgram_labels.iloc[idx,0])
         specgram = np.load(specgram_path)
         specgram = torch.from_numpy(specgram).float()
 
         label = self.specgram_labels.iloc[idx, 1]
-        #event_name = self.specgram_labels.iloc[idx,2]
         dist_km = self.specgram_labels.iloc[idx,3]
         evlo = self.specgram_labels.iloc[idx,4]
         evla = self.specgram_labels.iloc[idx,5]
@@ -67,9 +75,16 @@ class SpectrogramDataset_plus(Dataset):
         if self.target_transform:
             label = self.target_transform(label)
 
-        #return specgram, label, event_name, dist_km, evlo, evla, evdp, stlo, stla
         return specgram, label, dist_km, evlo, evla, evdp, stlo, stla
-        #return specgram, label, dist_km, evlo, evla
+
+    def _resolve_specgram_path(self, specgram_path):
+        specgram_path = str(specgram_path).strip()
+        if os.path.isabs(specgram_path):
+            return specgram_path
+        candidate = os.path.abspath(os.path.join(self.annotations_dir, specgram_path))
+        if os.path.exists(candidate):
+            return candidate
+        return os.path.abspath(specgram_path)
 
 class cnn_v2(nn.Module):
     def __init__(self):

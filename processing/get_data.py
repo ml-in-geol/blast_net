@@ -215,6 +215,7 @@ def main(params,debug=False):
 
         ds.flush()
         ds._close()
+        ds._ASDFDataSet__file = None
 
         if i_event%size!=rank: continue
 

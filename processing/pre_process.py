@@ -140,3 +140,5 @@ ds.flush()
 ds._close()
 ds_out.flush()
 ds_out._close()
+ds._ASDFDataSet__file = None
+ds_out._ASDFDataSet__file = None

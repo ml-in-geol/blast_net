@@ -184,6 +184,7 @@ def main(params,debug=False):
 
     ds.flush()
     ds._close()
+    ds._ASDFDataSet__file = None
 
 #params = read_param_dict('./params.dat')
 params = read_param_dict(argv[1])
