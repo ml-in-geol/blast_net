@@ -33,6 +33,25 @@ def read_param_dict(inparam_file,debug=True):
         print('--------------------------------------------------------')
     return params
 
+
+def get_event_key(event):
+    if getattr(event, 'event_descriptions', None):
+        for description in event.event_descriptions:
+            if getattr(description, 'text', None):
+                return '{}'.format(description.text)
+
+    origin = event.preferred_origin() or event.origins[0]
+    time = origin.time
+    return '{}:{:02d}:{:02d}:{:02d}:{:02d}:{:02d}.{:02d}'.format(
+        time.year,
+        time.month,
+        time.day,
+        time.hour,
+        time.minute,
+        time.second,
+        int(time.microsecond / 10000.0),
+    )
+
 def main(params,debug=False):
     #--------------------------------------------------------------------
     #Initialize MPI
@@ -78,12 +97,29 @@ def main(params,debug=False):
 
         n_events = len(event_dict)
         splits = n_events
+        existing_event_names = set()
+
+        if os.path.exists(params['filename']):
+            try:
+                ds_existing = pyasdf.ASDFDataSet(params['filename'], mpi=False, mode='r')
+                existing_event_names = {
+                    get_event_key(event)
+                    for event in ds_existing.events
+                }
+                ds_existing._close()
+                ds_existing._ASDFDataSet__file = None
+                print('found {} existing events in {}'.format(
+                    len(existing_event_names), params['filename']))
+            except Exception as exc:
+                print('warning: could not inspect existing ASDF file {}: {}'.format(
+                    params['filename'], exc))
 
     else:
         n_events = None
         splits = None
         params = None
         event_dict = None
+        existing_event_names = None
         #ds = None
 
     #--------------------------------------------------------------------
@@ -93,9 +129,14 @@ def main(params,debug=False):
     splits = comm.bcast(splits,root=0)
     params = comm.bcast(params,root=0)
     event_dict = comm.bcast(event_dict,root=0)
+    existing_event_names = comm.bcast(existing_event_names,root=0)
     event_names = list(event_dict.keys())
 
     for i_event in range(rank,splits,size):
+
+        if event_names[i_event] in existing_event_names:
+            print('skipping existing event {}'.format(event_names[i_event]))
+            continue
 
         ds = pyasdf.ASDFDataSet(params['filename'])
 

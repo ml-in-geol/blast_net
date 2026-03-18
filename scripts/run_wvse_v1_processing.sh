@@ -6,14 +6,17 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
 REGION="wvse_v1"
-#PYTHON_BIN="${PYTHON_BIN:-python3}"
-PYTHON_BIN="/Users/rossrm/anaconda3/envs/pytorch_env/bin/python"
+PYTHON_BIN="${PYTHON_BIN:-/Users/rossrm/anaconda3/bin/python}"
 PARAMS_TEMPLATE="${ROOT_DIR}/params/params_wvse_v1.dat"
 CATALOG_FILE="${ROOT_DIR}/catalogs/WVSE_catalog_v1.txt"
 GENERATED_PARAMS="${ROOT_DIR}/data/params_${REGION}_local.dat"
 ASDF_DIR="${ROOT_DIR}/data/asdf_datasets"
 RAW_FILE="${ASDF_DIR}/${REGION}_raw.h5"
 PROCESSED_FILE="${ASDF_DIR}/${REGION}_processed.h5"
+RESUME_RAW="${RESUME_RAW:-0}"
+SKIP_DOWNLOAD="${SKIP_DOWNLOAD:-0}"
+
+export HDF5_USE_FILE_LOCKING="${HDF5_USE_FILE_LOCKING:-FALSE}"
 
 require_file() {
     local path="$1"
@@ -40,9 +43,10 @@ require_file "${CATALOG_FILE}"
 mkdir -p "${ROOT_DIR}/data"
 mkdir -p "${ASDF_DIR}"
 
-guard_output "${RAW_FILE}"
+if [[ "${RESUME_RAW}" != "1" ]]; then
+    guard_output "${RAW_FILE}"
+fi
 guard_output "${PROCESSED_FILE}"
-guard_output "${GENERATED_PARAMS}"
 
 if [[ "${OVERWRITE:-0}" == "1" ]]; then
     rm -f "${RAW_FILE}" "${PROCESSED_FILE}" "${GENERATED_PARAMS}"
@@ -55,8 +59,12 @@ sed \
 
 echo "Using params file: ${GENERATED_PARAMS}"
 
-echo "Step 1/4: download raw waveforms"
-"${PYTHON_BIN}" "${ROOT_DIR}/processing/get_data.py" "${GENERATED_PARAMS}"
+if [[ "${SKIP_DOWNLOAD}" == "1" ]]; then
+    echo "Step 1/4: skipping raw download"
+else
+    echo "Step 1/4: download raw waveforms"
+    "${PYTHON_BIN}" "${ROOT_DIR}/processing/get_data.py" "${GENERATED_PARAMS}"
+fi
 
 echo "Step 2/4: preprocess waveforms"
 "${PYTHON_BIN}" "${ROOT_DIR}/processing/pre_process.py" "${RAW_FILE}" "${PROCESSED_FILE}"

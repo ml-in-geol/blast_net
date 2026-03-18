@@ -1,13 +1,34 @@
+import argparse
+
 import pyasdf
 import numpy as np
-from sys import argv
 from obspy.geodetics import gps2dist_azimuth
 
-input_file = argv[1]
-output_file = argv[2]
 
-ds = pyasdf.ASDFDataSet(input_file)
-ds_out = pyasdf.ASDFDataSet(output_file)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess raw ASDF waveforms.')
+    parser.add_argument('input_file')
+    parser.add_argument('output_file')
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Print verbose per-station waveform details.',
+    )
+    return parser.parse_args()
+
+
+def debug_print(enabled, *args, **kwargs):
+    if enabled:
+        print(*args, **kwargs)
+
+
+args = parse_args()
+input_file = args.input_file
+output_file = args.output_file
+debug = args.debug
+
+ds = pyasdf.ASDFDataSet(input_file, mpi=False, mode='r')
+ds_out = pyasdf.ASDFDataSet(output_file, mpi=False)
 
 pre_filt= (0.005,0.01,18.0,20.0)
 
@@ -18,10 +39,11 @@ sampling_rate = 40.0
 preset = 120.
 
 npts = int(req_time*sampling_rate)
+total_events = len(ds.events)
 
-for event in ds.events:
+for i_event, event in enumerate(ds.events, start=1):
 
-    print('working on event {}'.format(event))
+    print('working on event {}/{}'.format(i_event, total_events))
 
     origin = event.preferred_origin() or event.origins[0]
     event_latitude = origin.latitude
@@ -43,8 +65,8 @@ for event in ds.events:
         station_longitude = station.coordinates['longitude']
 
         seis = station.raw_recording
-        print('seis: ')
-        print(seis)
+        debug_print(debug, 'seis: ')
+        debug_print(debug, seis)
 
         #check that all traces have the same sampling rate
         for tr in seis:
@@ -76,9 +98,10 @@ for event in ds.events:
                 print('skipping stream, len > 3, cant merge')
                 print(seis)
                 print('----------------------------')
+                continue
 
-        print('seis after merge: ')
-        print(seis)
+        debug_print(debug, 'seis after merge: ')
+        debug_print(debug, seis)
 
         seis.resample(sampling_rate)
 
@@ -105,21 +128,21 @@ for event in ds.events:
 
         elif "1" in components and "2" in components:
 
-            print('rotation from H1/N2 -> NE for {}'.format(seis[0].id))
+            debug_print(debug, 'rotation from H1/N2 -> NE for {}'.format(seis[0].id))
             try:
                 seis.rotate(method="->ZNE",inventory=inv)
             except:
                 continue
-            print(seis)
+            debug_print(debug, seis)
             seis.rotate(method="NE->RT",back_azimuth=baz)
-            print(seis)
-            print('*************************\n')
+            debug_print(debug, seis)
+            debug_print(debug, '*************************\n')
 
-        print('seis here:')
-        print(seis)
+        debug_print(debug, 'seis here:')
+        debug_print(debug, seis)
         for tr in seis:
             tr.stats.distance = dist_m / 1000.0
-            print('distance {}'.format(tr.stats.distance))
+            debug_print(debug, 'distance {}'.format(tr.stats.distance))
 
         #add processed waveform
         #ds.add_waveforms(seis,event_id=event,tag='processed')
