@@ -1,167 +1,221 @@
-import obspy
-import pyasdf
+import argparse
+import math
+
 import numpy as np
-from sys import argv
-from obspy.taup import TauPyModel
+import pyasdf
 
-input_file = argv[1]
-ds = pyasdf.ASDFDataSet(input_file)
 
-fmin = 10.0
-fmax = 18.0
+def parse_args():
+    parser = argparse.ArgumentParser(description='Compute station-level P/S ratios and SNR.')
+    parser.add_argument('input_file')
+    parser.add_argument('--fmin', type=float, default=10.0)
+    parser.add_argument('--fmax', type=float, default=18.0)
+    parser.add_argument(
+        '--window-mode',
+        choices=['original', 'test1', 'test2', 'test3'],
+        default='original',
+        help='Windowing experiment to use for the P and S energy windows.',
+    )
+    parser.add_argument(
+        '--arrival-pad-frac',
+        type=float,
+        default=0.05,
+        help='Start each signal window slightly before the arrival by this fraction of the window length.',
+    )
+    parser.add_argument(
+        '--noise-offset',
+        type=float,
+        default=10.0,
+        help='Start the noise window this many seconds before the origin time.',
+    )
+    return parser.parse_args()
 
-#delete metadata if it exists
-try:
-    #del ds.auxiliary_data.PS_ratios['f_{:2.2f}_{:2.2f}'.format(fmin,fmax)]
-    #del ds.auxiliary_data.SNR['f_{:2.2f}_{:2.2f}'.format(fmin,fmax)]
-    del ds.auxiliary_data.PS_ratios
-    del ds.auxiliary_data.SNR
-except:
-    pass
-#del ds.auxiliary_data.PS_ratios
-#del ds.auxiliary_data.SNR
 
-#SNR_dict = {}
-#PS_ratio_dict = {}
-#SNRs = []
-#PS_ratios = []
+def get_band_key(fmin, fmax, window_mode):
+    base_key = 'f_{:2.2f}_{:2.2f}'.format(fmin, fmax)
+    if window_mode == 'original':
+        return base_key
+    return '{}__{}'.format(base_key, window_mode)
 
-for event in ds.events:
 
-    origin = event.preferred_origin() or event.origins[0]
-    event_name = '{}'.format(origin.time)
-    event_depth = origin.depth
+def compute_window_length(p_time, s_time, window_mode):
+    separation = s_time - p_time
+    if separation <= 0.0:
+        return None
 
-    ad1 = ds.auxiliary_data.distances.distances[event_name]
-    distance_dict = ad1.parameters
+    # Original parameters retained for provenance:
+    # W = 0.5 * (S_time - P_time)
+    # if W < 1.0: continue
+    # elif W > 3.0: W = 3.0
+    if window_mode == 'original':
+        window_length = separation * 0.5
+        if window_length < 1.0:
+            return None
+        if window_length > 3.0:
+            window_length = 3.0
+        return window_length
 
-    ad2 = ds.auxiliary_data.travel_times.P_times[event_name]
-    P_time_dict = ad2.parameters
+    # Test 1: wider dynamic windows to absorb source-location uncertainty.
+    # W = 0.75 * (S_time - P_time), clipped to [1.0, 5.0]
+    if window_mode == 'test1':
+        window_length = separation * 0.75
+        window_length = max(1.0, min(window_length, 5.0))
+        return window_length
 
-    ad3 = ds.auxiliary_data.travel_times.S_times[event_name]
-    S_time_dict = ad3.parameters
+    # Test 2: fixed 3 s P and S windows.
+    if window_mode == 'test2':
+        return 3.0
 
-    SNR_dict = {}
-    PS_ratio_dict = {}
-    SNRs = []
-    PS_ratios = []
+    # Test 3: fixed 5 s P and S windows.
+    if window_mode == 'test3':
+        return 5.0
 
-    for station in ds.ifilter(ds.q.event == event):
+    raise ValueError('Unsupported window_mode {}'.format(window_mode))
 
-        #get stream
-        seis = station.processed
-        net_code = seis[0].stats.network
-        sta_code = seis[0].stats.station
 
-        #get distance and travel times
-        dist = distance_dict['{}.{}'.format(net_code,sta_code)]
-        try:
-            P_time = P_time_dict['{}.{}'.format(net_code,sta_code)]
-            S_time = S_time_dict['{}.{}'.format(net_code,sta_code)]
-            print(P_time,S_time)
-        except:
-            print('No P or S time found for {} {}'.format(net_code,sta_code))
-            continue
+def safe_delete_band(ds, event_name, band_key):
+    try:
+        del ds.auxiliary_data.PS_ratios[event_name][band_key]
+    except Exception:
+        pass
+    try:
+        del ds.auxiliary_data.SNR[event_name][band_key]
+    except Exception:
+        pass
 
-        seis.filter('bandpass',freqmin=fmin,freqmax=fmax,corners=2,zerophase=True)
-        #calculate P and S ratios, and SNR
-        components = [tr.stats.channel[-1] for tr in seis]
 
-        if "R" in components and "T" in components and "Z" in components:
+def main():
+    args = parse_args()
+    ds = pyasdf.ASDFDataSet(args.input_file)
+    band_key = get_band_key(args.fmin, args.fmax, args.window_mode)
+    total_events = len(ds.events)
 
-            trZ = seis.select(channel = '*HZ')[0]
-            trR = seis.select(channel = '*HR')[0]
-            trT = seis.select(channel = '*HT')[0]
-            net_code = trZ.stats.network
-            sta_code = trZ.stats.station
+    for i_event, event in enumerate(ds.events, start=1):
+        origin = event.preferred_origin() or event.origins[0]
+        event_name = '{}'.format(origin.time)
+        print(
+            'working on event {}/{} ({}) [{}]'.format(
+                i_event, total_events, event_name, args.window_mode
+            )
+        )
 
-            #set window
-            W = (S_time - P_time)*0.5
-            if W < 1:
+        ad1 = ds.auxiliary_data.distances.distances[event_name]
+        distance_dict = ad1.parameters
+
+        ad2 = ds.auxiliary_data.travel_times.P_times[event_name]
+        p_time_dict = ad2.parameters
+
+        ad3 = ds.auxiliary_data.travel_times.S_times[event_name]
+        s_time_dict = ad3.parameters
+
+        snr_dict = {}
+        ps_ratio_dict = {}
+        snrs = []
+        ps_ratios = []
+
+        for station in ds.ifilter(ds.q.event == event):
+            seis = station.processed.copy()
+            if len(seis) == 0:
                 continue
-            elif W > 3:
-                W = 3
 
-            P2 = P_time - (W*0.05)
-            S2 = S_time - (W*0.05)
-            N = 10.0
+            net_code = seis[0].stats.network
+            sta_code = seis[0].stats.station
+            station_key = '{}.{}'.format(net_code, sta_code)
 
-            starttime_P = origin.time + P2
-            starttime_S = origin.time + S2
-            starttime_N = origin.time - N
-            endtime_P = starttime_P + W
-            endtime_S = starttime_S + W
-            endtime_N = starttime_N + W
+            _dist = distance_dict.get(station_key)
+            try:
+                p_time = p_time_dict[station_key]
+                s_time = s_time_dict[station_key]
+            except Exception:
+                print('No P or S time found for {} {}'.format(net_code, sta_code))
+                continue
 
-            P_winZ = trZ.slice(starttime=starttime_P,endtime=endtime_P)
-            P_winR = trR.slice(starttime=starttime_P,endtime=endtime_P)
-            P_winT = trT.slice(starttime=starttime_P,endtime=endtime_P)
-            S_winZ = trZ.slice(starttime=starttime_S,endtime=endtime_S)
-            S_winR = trR.slice(starttime=starttime_S,endtime=endtime_S)
-            S_winT = trT.slice(starttime=starttime_S,endtime=endtime_S)
-            N_winZ = trZ.slice(starttime=starttime_N,endtime=endtime_N)
-            N_winR = trR.slice(starttime=starttime_N,endtime=endtime_N)
-            N_winT = trT.slice(starttime=starttime_N,endtime=endtime_N)
+            seis.filter(
+                'bandpass',
+                freqmin=args.fmin,
+                freqmax=args.fmax,
+                corners=2,
+                zerophase=True,
+            )
 
-            #print(P_winZ, np.mean(P_winZ.data))
-            #print(P_winR, np.mean(P_winR.data))
-            #print(P_winT, np.mean(P_winT.data))
-            #print(S_winZ, np.mean(S_winZ.data))
-            #print(S_winR, np.mean(S_winR.data))
-            #print(S_winT, np.mean(S_winT.data))
-            #print(N_winZ, np.mean(N_winZ.data))
-            #print(N_winR, np.mean(N_winR.data))
-            #print(N_winT, np.mean(N_winT.data))
+            components = [tr.stats.channel[-1] for tr in seis]
+            if 'R' not in components or 'T' not in components or 'Z' not in components:
+                print('**************************************')
+                print('Z, R, and T components not available')
+                print(seis)
+                print('**************************************')
+                continue
 
-            P_Z = np.mean((P_winZ.data*1e9)**2)
-            P_R = np.mean((P_winR.data*1e9)**2)
-            P_T = np.mean((P_winT.data*1e9)**2)
-            S_Z = np.mean((S_winZ.data*1e9)**2)
-            S_R = np.mean((S_winR.data*1e9)**2)
-            S_T = np.mean((S_winT.data*1e9)**2)
-            N_Z = np.mean((N_winZ.data*1e9)**2)
-            N_R = np.mean((N_winR.data*1e9)**2)
-            N_T = np.mean((N_winT.data*1e9)**2)
+            tr_z = seis.select(channel='*HZ')[0]
+            tr_r = seis.select(channel='*HR')[0]
+            tr_t = seis.select(channel='*HT')[0]
 
-            #P_eng = P_Z + P_R + P_T
-            #S_eng = S_Z + S_R + S_T
-            #N_eng = N_Z + N_R + N_T
-            #P_sum = np.sqrt(P_eng - N_eng)
-            #S_sum = np.sqrt(S_eng - N_eng)
-            #N_sum = np.sqrt(N_eng)
+            window_length = compute_window_length(p_time, s_time, args.window_mode)
+            if window_length is None:
+                continue
 
-            P_sum = np.sqrt( (P_Z+P_R+P_T) - (N_Z+N_R+N_T) )
-            S_sum = np.sqrt( (S_Z+S_R+S_T) - (N_Z+N_R+N_T) )
-            N_sum = np.sqrt( N_Z+N_R+N_T )
+            pad = window_length * args.arrival_pad_frac
+            p_start = origin.time + (p_time - pad)
+            s_start = origin.time + (s_time - pad)
+            n_start = origin.time - args.noise_offset
+            p_end = p_start + window_length
+            s_end = s_start + window_length
+            n_end = n_start + window_length
 
-            PS_ratio = P_sum / S_sum
-            SNR = P_sum / N_sum
+            p_win_z = tr_z.slice(starttime=p_start, endtime=p_end)
+            p_win_r = tr_r.slice(starttime=p_start, endtime=p_end)
+            p_win_t = tr_t.slice(starttime=p_start, endtime=p_end)
+            s_win_z = tr_z.slice(starttime=s_start, endtime=s_end)
+            s_win_r = tr_r.slice(starttime=s_start, endtime=s_end)
+            s_win_t = tr_t.slice(starttime=s_start, endtime=s_end)
+            n_win_z = tr_z.slice(starttime=n_start, endtime=n_end)
+            n_win_r = tr_r.slice(starttime=n_start, endtime=n_end)
+            n_win_t = tr_t.slice(starttime=n_start, endtime=n_end)
 
-            #print(N_sum,S_sum)
-            #print('PS_ratio, SNR: {}, {}'.format(PS_ratio,SNR))
+            p_z = np.mean((p_win_z.data * 1e9) ** 2)
+            p_r = np.mean((p_win_r.data * 1e9) ** 2)
+            p_t = np.mean((p_win_t.data * 1e9) ** 2)
+            s_z = np.mean((s_win_z.data * 1e9) ** 2)
+            s_r = np.mean((s_win_r.data * 1e9) ** 2)
+            s_t = np.mean((s_win_t.data * 1e9) ** 2)
+            n_z = np.mean((n_win_z.data * 1e9) ** 2)
+            n_r = np.mean((n_win_r.data * 1e9) ** 2)
+            n_t = np.mean((n_win_t.data * 1e9) ** 2)
 
-            SNRs.append(SNR)
-            PS_ratios.append(PS_ratio)
+            p_signal = (p_z + p_r + p_t) - (n_z + n_r + n_t)
+            s_signal = (s_z + s_r + s_t) - (n_z + n_r + n_t)
+            noise_energy = n_z + n_r + n_t
 
-            SNR_dict['{}.{}'.format(net_code,sta_code)] = SNR
-            PS_ratio_dict['{}.{}'.format(net_code,sta_code)] = PS_ratio
+            p_sum = np.sqrt(p_signal)
+            s_sum = np.sqrt(s_signal)
+            n_sum = np.sqrt(noise_energy)
 
-        else:
-            print('**************************************')
-            print('Z, R, and T components not available')
-            print(seis)
-            print('**************************************')
-            pass
+            ps_ratio = p_sum / s_sum
+            snr = p_sum / n_sum
 
-    ds.add_auxiliary_data(data = np.array(PS_ratios), data_type = 'PS_ratios',
-            path = '{}/f_{:2.2f}_{:2.2f}'.format(event_name,fmin,fmax), parameters = PS_ratio_dict)
-    ds.add_auxiliary_data(data = np.array(SNRs), data_type = 'SNR',
-            path = '{}/f_{:2.2f}_{:2.2f}'.format(event_name,fmin,fmax), parameters = SNR_dict)
+            ps_ratios.append(ps_ratio)
+            snrs.append(snr)
+            ps_ratio_dict[station_key] = ps_ratio
+            snr_dict[station_key] = snr
 
-#ds.add_auxiliary_data(data = np.array(PS_ratios), data_type = 'PS_ratios',
-#        path = 'f_{:2.2f}_{:2.2f}'.format(fmin,fmax), parameters = PS_ratio_dict)
-#ds.add_auxiliary_data(data = np.array(SNRs), data_type = 'SNR',
-#        path = 'f_{:2.2f}_{:2.2f}'.format(fmin,fmax), parameters = SNR_dict)
-ds.flush()
-ds._close()
-ds._ASDFDataSet__file = None
+        safe_delete_band(ds, event_name, band_key)
+        ds.add_auxiliary_data(
+            data=np.array(ps_ratios),
+            data_type='PS_ratios',
+            path='{}/{}'.format(event_name, band_key),
+            parameters=ps_ratio_dict,
+        )
+        ds.add_auxiliary_data(
+            data=np.array(snrs),
+            data_type='SNR',
+            path='{}/{}'.format(event_name, band_key),
+            parameters=snr_dict,
+        )
+
+    ds.flush()
+    ds._close()
+    ds._ASDFDataSet__file = None
+
+
+if __name__ == '__main__':
+    main()
